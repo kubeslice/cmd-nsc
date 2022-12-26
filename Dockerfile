@@ -9,10 +9,14 @@ RUN tar xzvf spire-1.2.2-linux-x86_64-glibc.tar.gz -C /bin --strip=2 spire-1.2.2
 FROM go as build
 WORKDIR /build
 COPY go.mod go.sum ./
-COPY ./internal/imports imports
-RUN go build ./imports
+#COPY ./internal/imports imports
+#RUN go build ./imports
+ADD vendor vendor
 COPY . .
-RUN go build -o /bin/app .
+RUN go env -w GOPRIVATE=github.com/kubeslice && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -mod=vendor -a -o /bin/app .
+
+#RUN go build -o /bin/app .
 
 FROM build as test
 CMD go test -test.v ./...
@@ -20,6 +24,6 @@ CMD go test -test.v ./...
 FROM test as debug
 CMD dlv -l :40000 --headless=true --api-version=2 test -test.v ./...
 
-FROM alpine as runtime
+FROM alpine:3.16.2 as runtime
 COPY --from=build /bin/app /bin/app
 ENTRYPOINT ["/bin/app"]
