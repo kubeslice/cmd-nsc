@@ -299,6 +299,7 @@ func main() {
 		logger.Infof("successfully connected to %v. Response: %v", u.NetworkService(), resp)
 	}
 
+
 	// Wait for cancel event to terminate
 	<-signalCtx.Done()
 }
