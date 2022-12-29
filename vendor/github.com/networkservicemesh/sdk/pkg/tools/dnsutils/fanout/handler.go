@@ -103,6 +103,12 @@ func (h *fanoutHandler) waitResponse(ctx context.Context, respCh <-chan *dns.Msg
 				continue
 			}
 			if resp.Rcode == dns.RcodeSuccess {
+				if len(resp.Answer) == 0 {
+                                        if respCount == 0 {
+                                                return nil
+                                        }
+                                        continue
+                                }
 				return resp
 			}
 			if respCount == 0 {
