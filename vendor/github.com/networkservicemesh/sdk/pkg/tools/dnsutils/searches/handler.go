@@ -55,16 +55,31 @@ func (h *searchDomainsHandler) ServeDNS(ctx context.Context, rw dns.ResponseWrit
 		next.Handler(ctx).ServeDNS(ctx, r, newMsg)
 	}
 
-	for _, resp := range r.Responses {
+	// We could have received a number of responses from the fanout handler. We need to choose the
+	// best response to return to the querier.
+	// Choose a success response with ANSWER section first. If that is not available, choose a success response
+	// which does not contain any ANSWER sections.
+	respIdx := -1
+	for i, resp := range r.Responses {
 		if resp != nil && resp.Rcode == dns.RcodeSuccess {
-			resp.Question = m.Question
-			if err := rw.WriteMsg(resp); err != nil {
-				log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Warnf("got an error during write the message: %v", err.Error())
-				dns.HandleFailed(rw, resp)
-				return
+			if len(resp.Answer) > 0 {
+				respIdx = i
+				break
 			}
+			if respIdx == -1 {
+				respIdx = i
+			}
+		}
+	}
+
+	if respIdx >= 0 {
+		r.Responses[respIdx].Question = m.Question
+		if err := rw.WriteMsg(r.Responses[respIdx]); err != nil {
+			log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Warnf("got an error during write the message: %v", err.Error())
+			dns.HandleFailed(rw, r.Responses[respIdx])
 			return
 		}
+		return
 	}
 
 	dns.HandleFailed(rw, m)
