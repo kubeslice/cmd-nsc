@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	timeout = 5 * time.Second
+	timeout = 10 * time.Second
 )
 
 type searchDomainsHandler struct {
@@ -73,6 +73,7 @@ func (h *searchDomainsHandler) ServeDNS(ctx context.Context, rw dns.ResponseWrit
 	}
 
 	if respIdx >= 0 {
+		log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Debugf("Returning response: %v", r.Responses[respIdx])
 		r.Responses[respIdx].Question = m.Question
 		if err := rw.WriteMsg(r.Responses[respIdx]); err != nil {
 			log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Warnf("got an error during write the message: %v", err.Error())
