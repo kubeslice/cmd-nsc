@@ -74,19 +74,10 @@ func (h *fanoutHandler) ServeDNS(ctx context.Context, rw dns.ResponseWriter, msg
 	var resp = h.waitResponse(ctx, responseCh)
 
 	if resp == nil {
-		m := new(dns.Msg)
 		// TODO: The waitResponse() func needs to be improved to return the correct error code if none of the
 		// queried nameservers return an answer. We need a way to aggregate the error codes and choose what error
 		// to write in the dns response message if different nameservers returned different error codes.
-		// Return NXDOMAIN error code by default if resp is empty. Returning SERVFAIL is problematic because it
-		// means the server does not want to return an answer due to an internal error or similar errors. It
-		// indicates that the server might have the answer but does not want to return it. Many apps seem to treat this
-		// as a blanket dns server failure, leading to unexpected side effects.
-		m.SetRcode(msg, dns.RcodeNameError)
-		err := rw.WriteMsg(m)
-		if err != nil {
-			log.FromContext(ctx).WithField("fanoutHandler", "ServeDNS").Warnf("Error writing NameError: %v", err.Error())
-		}
+		dns.HandleFailed(rw, msg)
 		return
 	}
 
