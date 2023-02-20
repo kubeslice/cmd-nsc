@@ -58,7 +58,7 @@ import (
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/mechanisms/sendfd"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/retry"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/upstreamrefresh"
-	"github.com/networkservicemesh/sdk/pkg/networkservice/connectioncontext/dnscontext"
+	_ "github.com/networkservicemesh/sdk/pkg/networkservice/connectioncontext/dnscontext"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/core/chain"
 	"github.com/networkservicemesh/sdk/pkg/tools/dnsconfig"
 	"github.com/networkservicemesh/sdk/pkg/tools/dnsutils"
@@ -196,7 +196,7 @@ func main() {
 				kernelmech.MECHANISM: chain.NewNetworkServiceClient(kernel.NewClient()),
 			}),
 			sendfd.NewClient(),
-			dnscontext.NewClient(dnscontext.WithChainContext(ctx), dnscontext.WithDNSConfigsMap(dnsConfigsMap)),
+			// dnscontext.NewClient(dnscontext.WithChainContext(ctx), dnscontext.WithDNSConfigsMap(dnsConfigsMap)),
 			excludedprefixes.NewClient(excludedprefixes.WithAwarenessGroups(c.AwarenessGroups)),
 		),
 		client.WithDialTimeout(c.DialTimeout),
@@ -298,7 +298,6 @@ func main() {
 
 		logger.Infof("successfully connected to %v. Response: %v", u.NetworkService(), resp)
 	}
-
 
 	// Wait for cancel event to terminate
 	<-signalCtx.Done()
