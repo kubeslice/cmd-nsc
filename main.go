@@ -56,9 +56,10 @@ import (
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/mechanisms"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/mechanisms/kernel"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/mechanisms/sendfd"
+	"github.com/networkservicemesh/sdk/pkg/networkservice/common/null"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/retry"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/common/upstreamrefresh"
-	_ "github.com/networkservicemesh/sdk/pkg/networkservice/connectioncontext/dnscontext"
+	"github.com/networkservicemesh/sdk/pkg/networkservice/connectioncontext/dnscontext"
 	"github.com/networkservicemesh/sdk/pkg/networkservice/core/chain"
 	"github.com/networkservicemesh/sdk/pkg/tools/dnsconfig"
 	"github.com/networkservicemesh/sdk/pkg/tools/dnsutils"
@@ -163,18 +164,21 @@ func main() {
 		),
 	)
 
-	dnsConfigsMap := new(dnsconfig.Map)
-	dnsServerHandler := next.NewDNSHandler(
-		checkmsg.NewDNSHandler(),
-		dnsconfigs.NewDNSHandler(dnsConfigsMap),
-		searches.NewDNSHandler(),
-		noloop.NewDNSHandler(),
-		cache.NewDNSHandler(),
-		fanout.NewDNSHandler(),
-	)
+	dnsClient := null.NewClient()
+	if c.LocalDNSServerEnabled {
+		dnsConfigsMap := new(dnsconfig.Map)
+		dnsClient = dnscontext.NewClient(dnscontext.WithChainContext(ctx), dnscontext.WithDNSConfigsMap(dnsConfigsMap))
+		dnsServerHandler := next.NewDNSHandler(
+			checkmsg.NewDNSHandler(),
+			dnsconfigs.NewDNSHandler(dnsConfigsMap),
+			searches.NewDNSHandler(),
+			noloop.NewDNSHandler(),
+			cache.NewDNSHandler(),
+			fanout.NewDNSHandler(),
+		)
 
-	go dnsutils.ListenAndServe(ctx, dnsServerHandler, c.LocalDNSServerAddress)
-
+		go dnsutils.ListenAndServe(ctx, dnsServerHandler, c.LocalDNSServerAddress)
+	}
 	var healOptions = []heal.Option{heal.WithLivenessCheckInterval(c.LivenessCheckInterval),
 		heal.WithLivenessCheckTimeout(c.LivenessCheckTimeout)}
 
@@ -196,7 +200,7 @@ func main() {
 				kernelmech.MECHANISM: chain.NewNetworkServiceClient(kernel.NewClient()),
 			}),
 			sendfd.NewClient(),
-			// dnscontext.NewClient(dnscontext.WithChainContext(ctx), dnscontext.WithDNSConfigsMap(dnsConfigsMap)),
+			dnsClient,
 			excludedprefixes.NewClient(excludedprefixes.WithAwarenessGroups(c.AwarenessGroups)),
 		),
 		client.WithDialTimeout(c.DialTimeout),
