@@ -24,11 +24,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	nested "github.com/antonfisher/nested-logrus-formatter"
@@ -81,6 +86,67 @@ import (
 	"github.com/networkservicemesh/cmd-nsc/internal/config"
 )
 
+
+
+
+func getResolverAddress () (string, error) {
+       file, err := os.Open("/etc/nsm-dns-config/resolv.conf.restore")
+       if err != nil {
+               return "", err
+       }
+
+       resolverAddr := ""
+
+       scanner := bufio.NewScanner(file)
+       scanner.Split(bufio.ScanLines)
+
+       for scanner.Scan() {
+               cfgLine := strings.Split(scanner.Text(), " ")
+               if cfgLine[0] == "nameserver" {
+                       resolverAddr = cfgLine[1]
+                       break
+               }
+       }
+
+       return resolverAddr, nil
+}
+
+func resolveNsmConnectURL (ctx context.Context, connectURL *url.URL) (string, error) {
+       if connectURL.Scheme == "unix" {
+               return connectURL.Host, nil
+       }
+
+       resolverAddr, err := getResolverAddress()
+       if err != nil {
+               return "", err
+       }
+
+       resolver := net.Resolver{
+               PreferGo: true,
+               Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+                       dialer := net.Dialer{}
+                       return dialer.DialContext(ctx, "udp", net.JoinHostPort(resolverAddr, "53"))
+               },
+       }
+
+       host, port, err := net.SplitHostPort(connectURL.Host)
+       if err != nil {
+	       return "", err
+       }
+
+       addrs, err := resolver.LookupHost(ctx, host)
+       if err != nil {
+               return "", err
+       }
+
+       if len(addrs) == 0 {
+               return "", errors.New("error resolving connect URL, addr list empty")
+       }
+
+       return net.JoinHostPort(addrs[0], port), nil
+}
+
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -111,6 +177,13 @@ func main() {
 		logrus.Fatalf("invalid log level %s", c.LogLevel)
 	}
 	logrus.SetLevel(level)
+
+	resolvedHost, err := resolveNsmConnectURL(ctx, &c.ConnectTo)
+        if err != nil {
+                logrus.Fatalf("error resolving nsm connect host: %v, err: %v", c.ConnectTo, err)
+        }
+        c.ConnectTo.Host = resolvedHost
+
 
 	logger.Infof("rootConf: %+v", c)
 
