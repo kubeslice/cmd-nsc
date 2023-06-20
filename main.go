@@ -87,7 +87,7 @@ import (
 )
 
 func getResolverAddress() (string, error) {
-	file, err := os.Open("/etc/nsm-dns-config/resolv.conf.restore")
+	file, err := os.Open("/etc/resolv.conf")
 	if err != nil {
 		return "", err
 	}
@@ -113,11 +113,11 @@ func resolveNsmConnectURL(ctx context.Context, connectURL *url.URL) (string, err
 		return connectURL.Host, nil
 	}
 
-	// The resolv.conf is overwritten before the connection to nsmgr is established. This turns into
-	// a chicken and egg problem. Until the connection to nsmgr is established and the nsc is
+	// The resolv.conf is overwritten before the monitorClient connection is made. This will cause the container to crashloop.
+	// This turns into a chicken and egg problem. Until the connection to nsmgr is established and the nsc is
 	// receives connection context to the nse, the dns proxy would not know the IP address of the
 	// upstream dns servers, hence it cannot resolve any dns names. To fix this problem, we will read the
-	// IP address of kube-dns service backed up in /etc/nsm-dns-config/resolv.conf.restore and use it to
+	// IP address of kube-dns service from /etc/resolv.conf before getting to monitorClient connection and use it to
 	// resolve the tcp connect URL.
 	resolverAddr, err := getResolverAddress()
 	if err != nil {
@@ -180,6 +180,8 @@ func main() {
 	}
 	logrus.SetLevel(level)
 
+	// TODO: Remove this once internalTrafficPolicyi=Local for the nsmgr service works reliably.
+	c.ConnectTo = url.URL{Scheme: "tcp", Host: os.Getenv("MY_NODE_NAME") + ".kubeslice-system.svc.cluster.local:5001"}
 	// Resolve connect URL if the connection scheme is tcp or udp
 	resolvedHost, err := resolveNsmConnectURL(ctx, &c.ConnectTo)
 	if err != nil {
