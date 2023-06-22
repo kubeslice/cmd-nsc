@@ -86,6 +86,7 @@ import (
 	"github.com/networkservicemesh/cmd-nsc/internal/config"
 )
 
+
 func getResolverAddress() (string, error) {
 	file, err := os.Open("/etc/resolv.conf")
 	if err != nil {
