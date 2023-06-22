@@ -86,6 +86,7 @@ import (
 	"github.com/networkservicemesh/cmd-nsc/internal/config"
 )
 
+
 func getResolverAddress() (string, error) {
 	file, err := os.Open("/etc/resolv.conf")
 	if err != nil {
@@ -149,6 +150,20 @@ func resolveNsmConnectURL(ctx context.Context, connectURL *url.URL) (string, err
 	return net.JoinHostPort(addrs[0], port), nil
 }
 
+func getNsmgrNodeLocalServiceName() string {
+	nodeName := os.Getenv("MY_NODE_NAME")
+	// Nsmgr service name should be derived from the node name. If the node name does
+	// not conform to a RFC-1035 label name, it needs to be modified by replacing all
+	// uppercase letters to lowercase, replacing all '.' with '-', and finally truncating
+	// the length to 63 characters.
+	svcName := strings.ReplaceAll(strings.ToLower(nodeName), ".", "-")
+	if len(svcName) > 63 {
+		svcName = svcName[:63]
+	}
+
+	return svcName
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -181,7 +196,7 @@ func main() {
 	logrus.SetLevel(level)
 
 	// TODO: Remove this once internalTrafficPolicyi=Local for the nsmgr service works reliably.
-	c.ConnectTo = url.URL{Scheme: "tcp", Host: os.Getenv("MY_NODE_NAME") + ".kubeslice-system.svc.cluster.local:5001"}
+	c.ConnectTo = url.URL{Scheme: "tcp", Host: getNsmgrNodeLocalServiceName() + ".kubeslice-system.svc.cluster.local:5001"}
 	// Resolve connect URL if the connection scheme is tcp or udp
 	resolvedHost, err := resolveNsmConnectURL(ctx, &c.ConnectTo)
 	if err != nil {
