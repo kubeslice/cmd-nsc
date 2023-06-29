@@ -37,6 +37,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	nested "github.com/antonfisher/nested-logrus-formatter"
 	"github.com/edwarnicke/grpcfd"
@@ -89,9 +90,23 @@ import (
 )
 
 func getResolverAddress() (string, error) {
-	file, err := os.Open("/etc/resolv.conf")
+	if os.Getenv("DNS_RESOLVER_IP") != "" {
+		return os.Getenv("DNS_RESOLVER_IP"), nil
+	}
+
+	// The very first time when cmd-nsc boots up, the resolv.conf.restore file is
+	// not available, hence we will try to get the resolver IP from the original resolv.conf.
+	// The nsm dnscontext package overwrites the original resolv.conf after copying its
+	// contents to resolv.conf.restore. If the cmd-nsc container restarts for any reason, it cannot use
+	// the resolver IP in the original resolv.conf since the dnscontext would have overwritten
+	// it to point to the localhost address, so we read the resolver IP from the restore file
+	// resolv.conf.restore.
+	file, err := os.Open("/etc/nsm-dns-config/resolv.conf.restore")
 	if err != nil {
-		return "", err
+		file, err = os.Open("/etc/resolv.conf")
+		if err != nil {
+			return "", err
+		}
 	}
 
 	resolverAddr := ""
@@ -116,11 +131,11 @@ func resolveNsmConnectURL(ctx context.Context, connectURL *url.URL) (string, err
 	}
 
 	// The resolv.conf is overwritten before the monitorClient connection is made. This will cause the container to crashloop.
-	// This turns into a chicken and egg problem. Until the connection to nsmgr is established and the nsc is
+	// This turns into a chicken and egg problem. Until the connection to nsmgr is established and the nsc
 	// receives connection context to the nse, the dns proxy would not know the IP address of the
 	// upstream dns servers, hence it cannot resolve any dns names. To fix this problem, we will read the
-	// IP address of kube-dns service from /etc/resolv.conf before getting to monitorClient connection and use it to
-	// resolve the tcp connect URL.
+	// IP address of kube-dns service from /etc/nsm-dns-config/resolv.conf.restore before getting to monitorClient connection
+	// and use it to resolve the tcp connect URL.
 	resolverAddr, err := getResolverAddress()
 	if err != nil {
 		return "", err
@@ -161,6 +176,25 @@ func getNsmgrNodeLocalServiceName() string {
 	return "nsm-" + hex.EncodeToString(nodeNameHash[:])
 }
 
+// Checks if a successful connection can be made to the provided endpoint.
+func checkPodNetworkConnectivity(endpoint string) error {
+	var d net.Dialer
+	var err error
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	// Wait and retry if the connection attempt fails
+	for i := 0; i < 4; i++ {
+		conn, errN := d.DialContext(ctx, "tcp", endpoint)
+		if errN == nil {
+			conn.Close()
+			return nil
+		}
+		err = errN
+		time.Sleep(15 * time.Second)
+	}
+
+	return err
+}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -203,6 +237,19 @@ func main() {
 	c.ConnectTo.Host = resolvedHost
 
 	logger.Infof("rootConf: %+v", c)
+
+	// Check if pod network is ready before making connection to the nsmgr over tcp. This is needed if the cmd-nsc sidecar is
+	// running alongside the istio-proxy sidecar. If istio is enabled on the pod, the istio-init container installs iptable
+	// rules to redirect all incoming and outgoing traffic to the port numbers that the istio-proxy listens on. This leads to
+	// a condition where the pod network is virtually dead from the time istio-init installs the iptable rules to the time the
+	// istio-proxy sidecar boots up and is ready to listen on the port numbers to which all the traffic is redirected. This means
+	// that any other container in the pod cannot make network connections to the outside world until the istio-proxy is ready.
+	// This causes the cmd-nsc to crashloop trying to reach nsmgr over tcp. So we need to check if the pod network is operational
+	// before attempting to connect to the nsmgr.
+	err = checkPodNetworkConnectivity(resolvedHost)
+	if err != nil {
+		logrus.Fatalf("cannot connect to nsmgr over the pod network. host: %v, err: %v", resolvedHost, err)
+	}
 
 	// ********************************************************************************
 	// Configure Open Telemetry
