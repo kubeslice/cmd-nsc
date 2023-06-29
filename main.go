@@ -184,11 +184,12 @@ func checkPodNetworkConnectivity(endpoint string) error {
 	defer cancel()
 	// Wait and retry if the connection attempt fails
 	for i := 0; i < 4; i++ {
-		conn, err := d.DialContext(ctx, "tcp", endpoint)
-		if err == nil {
+		conn, errN := d.DialContext(ctx, "tcp", endpoint)
+		if errN == nil {
 			conn.Close()
 			return nil
 		}
+		err = errN
 		time.Sleep(15 * time.Second)
 	}
 
