@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	timeout = 10 * time.Second
+	timeout = 3 * time.Second
 )
 
 type searchDomainsHandler struct {
@@ -47,40 +47,36 @@ func (h *searchDomainsHandler) ServeDNS(ctx context.Context, rw dns.ResponseWrit
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	next.Handler(ctx).ServeDNS(ctx, r, m)
-
-	for _, d := range SearchDomains(ctx) {
+	for i, d := range append([]string{""}, SearchDomains(ctx)...) {
 		newMsg := m.Copy()
 		newMsg.Question[0].Name = dns.Fqdn(newMsg.Question[0].Name + d)
 		next.Handler(ctx).ServeDNS(ctx, r, newMsg)
-	}
 
-	// We could have received a number of responses from the fanout handler. We need to choose the
-	// best response to return to the querier.
-	// Choose a success response with ANSWER section first. If that is not available, choose a success response
-	// which does not contain any ANSWER sections.
-	respIdx := -1
-	for i, resp := range r.Responses {
-		if resp != nil && resp.Rcode == dns.RcodeSuccess {
-			if len(resp.Answer) > 0 {
-				respIdx = i
-				break
+		// If the response contains an answer section, return right away.
+		if r.Responses[i] != nil && r.Responses[i].Rcode == dns.RcodeSuccess && len(r.Responses[i].Answer) > 0 {
+			log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Debugf("Returning response with ans section: %v", r.Responses[i])
+			r.Responses[i].Question = m.Question
+			if err := rw.WriteMsg(r.Responses[i]); err != nil {
+				log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Warnf("got an error during write the message: %v", err.Error())
+				dns.HandleFailed(rw, r.Responses[i])
+				return
 			}
-			if respIdx == -1 {
-				respIdx = i
-			}
-		}
-	}
-
-	if respIdx >= 0 {
-		log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Debugf("Returning response: %v", r.Responses[respIdx])
-		r.Responses[respIdx].Question = m.Question
-		if err := rw.WriteMsg(r.Responses[respIdx]); err != nil {
-			log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Warnf("got an error during write the message: %v", err.Error())
-			dns.HandleFailed(rw, r.Responses[respIdx])
 			return
 		}
-		return
+	}
+
+	// If we are here, we have received responses without an answer section. Return the first response with an Rcode of success.
+	// If there are no responses with RcodeSuccess, we fallthrough and return a failure message to the caller.
+	for i, resp := range r.Responses {
+		if resp != nil && resp.Rcode == dns.RcodeSuccess {
+			log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Debugf("Returning response without ans: %v", r.Responses[i])
+			r.Responses[i].Question = m.Question
+			if err := rw.WriteMsg(r.Responses[i]); err != nil {
+				log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Warnf("got an error during write the message: %v", err.Error())
+				dns.HandleFailed(rw, r.Responses[i])
+			}
+			return
+		}
 	}
 
 	dns.HandleFailed(rw, m)
