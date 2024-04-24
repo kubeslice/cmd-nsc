@@ -340,7 +340,7 @@ func main() {
 		client.WithDialOptions(dialOptions...),
 	)
 
-	nsmClient = retry.NewClient(nsmClient, retry.WithTryTimeout(c.RequestTimeout))
+	nsmClient = retry.NewClient(nsmClient, retry.WithTryTimeout(c.RequestTimeout), retry.WithInterval(5*time.Second))
 
 	// ********************************************************************************
 	// Configure signal handling context
