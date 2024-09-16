@@ -1,9 +1,9 @@
-@Library('jenkins-library@opensource-release') _
+@Library('jenkins-library@opensource-release-multiarch') _
 dockerImagePipeline(
   script: this,
-  service: 'cmd-nsc',
-  dockerfile: 'Dockerfile',
-  buildContext: '.',
-  buildArguments: [PLATFORM:"amd64"]
-  
+  services: ['cmd-nsc'],
+  dockerfiles: ['Dockerfile'],
+  buildArgumentsList: [
+    [ENV: 'production', PLATFORM: 'linux/arm64,linux/amd64']
+]  
 )
