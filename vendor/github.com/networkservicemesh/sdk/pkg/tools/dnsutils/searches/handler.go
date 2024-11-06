@@ -56,6 +56,7 @@ func (h *searchDomainsHandler) ServeDNS(ctx context.Context, rw dns.ResponseWrit
 		if r.Responses[i] != nil && r.Responses[i].Rcode == dns.RcodeSuccess && len(r.Responses[i].Answer) > 0 {
 			log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Debugf("Returning response with ans section: %v", r.Responses[i])
 			r.Responses[i].Question = m.Question
+			r.Responses[i].Answer[0].Header().Name = m.Question[0].Name
 			if err := rw.WriteMsg(r.Responses[i]); err != nil {
 				log.FromContext(ctx).WithField("searchDomainsHandler", "ServeDNS").Warnf("got an error during write the message: %v", err.Error())
 				dns.HandleFailed(rw, r.Responses[i])

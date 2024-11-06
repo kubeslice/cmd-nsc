@@ -58,6 +58,10 @@ func (r *resolveConfig) readProperties() error {
 
 // Value returns value of property
 func (r *resolveConfig) Value(k string) []string {
+	if _, ok := r.properties[k]; !ok {
+		return nil
+	}
+
 	return r.properties[k]
 }
 
