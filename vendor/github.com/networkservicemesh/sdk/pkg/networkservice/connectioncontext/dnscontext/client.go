@@ -22,6 +22,7 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
+        "strings"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/networkservicemesh/api/pkg/api/networkservice"
@@ -135,7 +136,21 @@ func (c *dnsContextClient) initialize() {
 	}
 
 	r.SetValue(nameserverProperty, c.defaultNameServerIP)
-	r.SetValue(searchProperty, []string{}...)
+	// Check if the ndots option is present in the original resolv.conf.
+	// The dns proxy in the sidecar constructs the query to be sent to the
+	// upstream dns servers. Appending the domain names specified in the
+	// search key of the resolv.conf is handled by the proxy, the dns client
+	// need not do it on its own. Hence, set the ndots field to 1.
+	options := r.Value(optionsProperty)
+	if options != nil {
+		for i, option := range options {
+			if strings.Split(option, ":")[0] == "ndots" {
+				options[i] = "ndots:1"
+				break
+			}
+		}
+		r.SetValue(optionsProperty, options...)
+	}
 
 	if err = r.Save(); err != nil {
 		log.FromContext(c.chainContext).Errorf("An error during save resolve config: %v", err.Error())
